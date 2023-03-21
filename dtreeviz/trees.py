@@ -1,6 +1,7 @@
-import os
+import os, sys
 import tempfile
 from typing import Mapping, List
+from pathlib import Path
 
 import matplotlib.patches as patches
 import matplotlib.pyplot as plt
@@ -16,6 +17,10 @@ from dtreeviz.models.shadow_decision_tree import ShadowDecTree
 from dtreeviz.models.shadow_decision_tree import ShadowDecTreeNode
 from dtreeviz.utils import myround, DTreeVizRender, add_classifier_legend, _format_axes, _draw_wedge, \
                            _set_wedge_ticks, tessellate, is_numeric
+
+sys.path.append(Path(__file__).parents[2].__str__())
+
+from Tools.DataSemanticsTools import *
 
 # How many bins should we have based upon number of classes
 NUM_BINS = [
@@ -226,6 +231,7 @@ class DTreeVizAPI:
              show_node_labels: bool = False,
              show_just_path: bool = False,
              fancy: bool = True,
+             inktvis: bool = False,
              histtype: ('bar', 'barstacked', 'strip') = 'barstacked',
              leaftype: ('pie', 'barh') = 'pie',
              highlight_path: List[int] = [],
@@ -527,7 +533,8 @@ class DTreeVizAPI:
                                      ticks_fontsize=ticks_fontsize,
                                      label_fontsize=label_fontsize,
                                      fontname=fontname,
-                                     highlight_node=node.id in highlight_path)
+                                     highlight_node=node.id in highlight_path,
+                                     inktvis=inktvis)
                 else:
                     _regr_split_viz(node, X_train, y_train,
                                     filename=f"{tmp}/node{node.id}_{os.getpid()}.svg",
@@ -641,23 +648,23 @@ class DTreeVizAPI:
         else:
             title_element = ""
         dot = f"""
-        digraph G {{
-            splines=line;
-            nodesep={nodesep};
-            ranksep={ranksep};
-            rankdir={orientation};
-            margin=0.0;
-            {title_element}
-            node [margin="0.03" penwidth="0.5" width=.1, height=.1];
-            edge [arrowsize=.4 penwidth="0.3"]
+            digraph G {{
+                splines=line;
+                nodesep={nodesep};
+                ranksep={ranksep};
+                rankdir={orientation};
+                margin=0.0;
+                {title_element}
+                node [margin="0.03" penwidth="0.5" width=.1, height=.1];
+                edge [arrowsize=.4 penwidth="0.3"]
 
-            {newline.join(internal)}
-            {newline.join(edges)}
-            {newline.join(leaves)}
+                {newline.join(internal)}
+                {newline.join(edges)}
+                {newline.join(leaves)}
 
-            {class_legend_gr()}
-            {instance_gr()}
-        }}
+                {class_legend_gr()}
+                {instance_gr()}
+            }}
             """
 
         return DTreeVizRender(dot, scale)
@@ -1081,13 +1088,16 @@ def _class_split_viz(node: ShadowDecTreeNode,
                      precision: int,
                      histtype: ('bar', 'barstacked', 'strip'),
                      X: np.array,
-                     highlight_node: bool):
+                     highlight_node: bool,
+                     inktvis: bool = False):
     height_range = (.5, 1.5)
     h = _prop_size(n=node_heights[node.id], counts=node_heights.values(), output_range=height_range)
     figsize = (3.3, h)
     fig, ax = plt.subplots(1, 1, figsize=figsize)
 
     feature_name = node.feature_name()
+    if isinstance(feature_name, tuple):
+        feature_name = feature_name[0]
 
     # Get X, y data for all samples associated with this node.
     X_feature = X_train[:, node.feature()]
@@ -1175,6 +1185,11 @@ def _class_split_viz(node: ShadowDecTreeNode,
             _ = _draw_wedge(ax, x=X[node.feature()], node=node, color=colors['highlight'], is_classifier=True, h=h, height_range=height_range, bins=bins)
 
     _set_wedge_ticks(ax, ax_ticks=list(overall_feature_range), wedge_ticks=wedge_ticks)
+
+    if inktvis & isinstance(node.feature_name(), tuple):
+        ticks = list(keys_dict[node.feature_name()[1]].keys())
+        labels = list(keys_dict[node.feature_name()[1]].values())
+        ax.set_xticks(ticks, labels, minor=True, rotation=45)
 
     if filename is not None:
         plt.savefig(filename, bbox_inches='tight', pad_inches=0)
